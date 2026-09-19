@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Snake</title>
+<style>
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    box-sizing: border-box;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    font-family: system-ui, sans-serif;
+  }
+
+  #score {
+    flex: 0 0 auto;
+    font-size: 1.1rem;
+  }
+
+  #board-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #board {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    background: #11111b;
+    border: 2px solid #45475a;
+  }
+
+  #message {
+    min-height: 1.2em;
+    font-size: 0.9rem;
+    text-align: center;
+    flex: 0 0 auto;
+  }
+
+  #restart {
+    flex: 0 0 auto;
+    padding: 4px 14px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-radius: 6px;
+    border: 1px solid #45475a;
+    background: #313244;
+    color: #cdd6f4;
+  }
+
+  #restart[hidden] {
+    display: block;
+    visibility: hidden;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<span id="score">Score: 0</span>
+<div id="board-wrap">
+  <canvas id="board"></canvas>
+</div>
+<div id="message"></div>
+<button id="restart" hidden>Restart</button>
+
+<script>
+  const BASELINE_CELLS = 20;
+  const TICK_MS = 120;
+
+  let gridWidth = BASELINE_CELLS;
+  let gridHeight = BASELINE_CELLS;
+  let cellSize = 20;
+
+  const boardWrap = document.getElementById('board-wrap');
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const messageEl = document.getElementById('message');
+  const restartButton = document.getElementById('restart');
+
+  const DIRECTIONS = {
+    ArrowUp: { x: 0, y: -1 },
+    ArrowDown: { x: 0, y: 1 },
+    ArrowLeft: { x: -1, y: 0 },
+    ArrowRight: { x: 1, y: 0 },
+    w: { x: 0, y: -1 },
+    s: { x: 0, y: 1 },
+    a: { x: -1, y: 0 },
+    d: { x: 1, y: 0 },
+  };
+
+  let snake;
+  let direction;
+  let nextDirection;
+  let food;
+  let score;
+  let isGameOver;
+  let isPaused;
+  let tickTimer;
+
+  function computeGridDimensions() {
+    const availW = boardWrap.clientWidth;
+    const availH = boardWrap.clientHeight;
+    if (availW >= availH) {
+      gridHeight = BASELINE_CELLS;
+      gridWidth = Math.max(BASELINE_CELLS, Math.round(BASELINE_CELLS * (availW / availH)));
+    } else {
+      gridWidth = BASELINE_CELLS;
+      gridHeight = Math.max(BASELINE_CELLS, Math.round(BASELINE_CELLS * (availH / availW)));
+    }
+  }
+
+  function startGame() {
+    computeGridDimensions();
+
+    const startX = Math.floor(gridWidth / 2);
+    const startY = Math.floor(gridHeight / 2);
+    snake = [
+      { x: startX, y: startY },
+      { x: startX - 1, y: startY },
+      { x: startX - 2, y: startY },
+    ];
+    direction = { x: 1, y: 0 };
+    nextDirection = direction;
+    score = 0;
+    isGameOver = false;
+    isPaused = false;
+
+    food = placeFood();
+
+    updateScore();
+    messageEl.textContent = '';
+    restartButton.hidden = true;
+
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(tick, TICK_MS);
+
+    resizeCanvas();
+  }
+
+  function resizeCanvas() {
+    const cellFromWidth = boardWrap.clientWidth / gridWidth;
+    const cellFromHeight = boardWrap.clientHeight / gridHeight;
+    cellSize = Math.max(1, Math.floor(Math.min(cellFromWidth, cellFromHeight)));
+    canvas.width = cellSize * gridWidth;
+    canvas.height = cellSize * gridHeight;
+    draw();
+  }
+
+  function placeFood() {
+    const freeCells = [];
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) {
+        if (!snake.some(segment => segment.x === x && segment.y === y)) {
+          freeCells.push({ x, y });
+        }
+      }
+    }
+    return freeCells[Math.floor(Math.random() * freeCells.length)];
+  }
+
+  function tick() {
+    if (isGameOver || isPaused) return;
+
+    direction = nextDirection;
+    const head = snake[0];
+    const newHead = { x: head.x + direction.x, y: head.y + direction.y };
+
+    if (isWall(newHead) || isSnakeBody(newHead)) {
+      endGame();
+      return;
+    }
+
+    snake.unshift(newHead);
+
+    if (newHead.x === food.x && newHead.y === food.y) {
+      score++;
+      updateScore();
+      food = placeFood();
+    } else {
+      snake.pop();
+    }
+
+    draw();
+  }
+
+  function isWall(cell) {
+    return cell.x < 0 || cell.x >= gridWidth || cell.y < 0 || cell.y >= gridHeight;
+  }
+
+  function isSnakeBody(cell) {
+    return snake.some(segment => segment.x === cell.x && segment.y === cell.y);
+  }
+
+  function endGame() {
+    isGameOver = true;
+    clearInterval(tickTimer);
+    messageEl.textContent = `Game over! Final score: ${score}`;
+    restartButton.hidden = false;
+  }
+
+  function togglePause() {
+    if (isGameOver) return;
+    isPaused = !isPaused;
+    messageEl.textContent = isPaused ? 'Paused' : '';
+  }
+
+  function updateScore() {
+    scoreEl.textContent = `Score: ${score}`;
+  }
+
+  function draw() {
+    ctx.fillStyle = '#11111b';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawCell(food, '#f38ba8');
+
+    snake.forEach((segment, index) => {
+      drawCell(segment, index === 0 ? '#a6e3a1' : '#94e2d5');
+    });
+  }
+
+  function drawCell(cell, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(cell.x * cellSize, cell.y * cellSize, cellSize - 1, cellSize - 1);
+  }
+
+  function isOppositeDirection(a, b) {
+    return a.x === -b.x && a.y === -b.y;
+  }
+
+  const SCROLLING_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ']);
+
+  document.addEventListener('keydown', event => {
+    if (SCROLLING_KEYS.has(event.key)) {
+      event.preventDefault();
+    }
+
+    if (event.key === ' ') {
+      togglePause();
+      return;
+    }
+
+    const wantedDirection = DIRECTIONS[event.key];
+    if (!wantedDirection || isPaused || isGameOver) return;
+
+    if (!isOppositeDirection(wantedDirection, direction)) {
+      nextDirection = wantedDirection;
+    }
+  });
+
+  restartButton.addEventListener('click', startGame);
+
+  new ResizeObserver(resizeCanvas).observe(boardWrap);
+
+  startGame();
+</script>
+
+</body>
+</html>
